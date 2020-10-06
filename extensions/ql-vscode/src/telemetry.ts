@@ -15,6 +15,27 @@ export enum CommandCompletion {
   Cancelled = 'Cancelled'
 }
 
+// Avoid sending the following data to App insights since we don't need it.
+const tagsToRemove = [
+  'ai.application.ver',
+  'ai.device.id',
+  'ai.cloud.roleInstance',
+  'ai.cloud.role',
+  'ai.device.id',
+  'ai.device.osArchitecture',
+  'ai.device.osPlatform',
+  'ai.device.osVersion',
+  'ai.internal.sdkVersion',
+  'ai.session.id'
+];
+
+const baseDataPropertiesToRemove = [
+  'common.os',
+  'common.platformversion',
+  'common.remotename',
+  'common.uikind',
+  'common.vscodesessionid'
+];
 
 export class TelemetryListener extends ConfigListener {
 
@@ -87,9 +108,12 @@ export class TelemetryListener extends ConfigListener {
     const client = (this.reporter as any).appInsightsClient as appInsights.TelemetryClient;
     if (client) {
       // add a telemetry processor to delete unwanted properties
-      client.addTelemetryProcessor((envelope) => {
-        delete envelope.tags['ai.cloud.roleInstance'];
-        delete (envelope.data as any)?.baseData?.properties?.['common.remotename'];
+      client.addTelemetryProcessor((envelope: any) => {
+        tagsToRemove.forEach(tag => delete envelope.tags[tag]);
+        const baseDataProperties = (envelope.data as any)?.baseData?.properties;
+        if (baseDataProperties) {
+          baseDataPropertiesToRemove.forEach(prop => delete baseDataProperties[prop]);
+        }
 
         return true;
       });
@@ -141,15 +165,15 @@ export class TelemetryListener extends ConfigListener {
       // if global telemetry is disabled, avoid showing the dialog or making any changes
       let result = undefined;
       if (GLOBAL_ENABLE_TELEMETRY.getValue()) {
-        // Extension won't start until this completes. So, set a timeout here in order
-        // to ensure the extension continues even if the user doesn't make a choice.
-        result = await Promise.race([
-          showBinaryChoiceDialog(
-            'Do we have your permission to collect anonymous usage statistics help us improve CodeQL for VSCode? See [TELEMETRY.md](https://github.com/github/vscode-codeql/blob/main/.github/TELEMETRY.md)',
-            false
-          ),
-          new Promise(resolve => setTimeout(resolve, 10000))
-        ]) as boolean | undefined;
+        // Extension won't start until this completes.
+        result = await showBinaryChoiceDialog(
+          'Do we have your permission to collect usage data and metrics to help us improve CodeQL for VSCode? See [TELEMETRY.md](https://github.com/github/vscode-codeql/blob/main/TELEMETRY.md) for details of what we collect and how we use it.',
+          // We make this dialog modal for now.
+          // If we do decide to keep this dialog as modal, then this implementation can change and
+          // we no longer need to call Promise.race. Before committing this PR, we need to make
+          // this decision.
+          true
+        );
       }
       if (result !== undefined) {
         await Promise.all([
@@ -191,5 +215,6 @@ export let telemetryListener: TelemetryListener;
 
 export async function initializeTelemetry(extension: Extension<any>, ctx: ExtensionContext): Promise<void> {
   telemetryListener = new TelemetryListener(extension.id, extension.packageJSON.version, key, ctx);
+  telemetryListener.initialize();
   ctx.subscriptions.push(telemetryListener);
 }
