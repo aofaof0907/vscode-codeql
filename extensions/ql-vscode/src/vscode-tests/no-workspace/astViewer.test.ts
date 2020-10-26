@@ -15,9 +15,8 @@ const expect = chai.expect;
 
 describe('AstViewer', () => {
   let astRoots: AstItem[];
-  let viewer: AstViewer;
+  let viewer: AstViewer | undefined;
   let sandbox: sinon.SinonSandbox;
-
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
     // the ast is stored in yaml because there are back pointers
@@ -31,6 +30,10 @@ describe('AstViewer', () => {
 
   afterEach(() => {
     sandbox.restore();
+    if (viewer) {
+      viewer.dispose();
+      viewer = undefined;
+    }
   });
 
   it('should update the viewer roots', () => {
@@ -58,7 +61,6 @@ describe('AstViewer', () => {
   it('should select nothing', () => {
     doSelectionTest(undefined, new Range(2, 3, 4, 5));
   });
-
 
   function doSelectionTest(
     expectedSelection: any,

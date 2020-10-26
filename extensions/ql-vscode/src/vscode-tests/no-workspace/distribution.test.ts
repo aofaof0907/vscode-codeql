@@ -253,8 +253,12 @@ describe('Launcher path', () => {
     expect(result).to.equal(undefined);
   });
 
-  it('should not warn when deprecated launcher is used, but no new launcher is available', async () => {
-    const manager = new (createModule().DistributionManager)(undefined as any, { customCodeQlPath: pathToCmd } as any, undefined as any);
+  it('should not warn when deprecated launcher is used, but no new launcher is available', async function() {
+    const manager = new (createModule().DistributionManager)(
+      { customCodeQlPath: pathToCmd } as any,
+      {} as any,
+      undefined as any
+    );
     launcherThatExists = 'codeql.cmd';
 
     const result = await manager.getCodeQlPathWithoutVersionCheck();
@@ -266,7 +270,11 @@ describe('Launcher path', () => {
   });
 
   it('should warn when deprecated launcher is used, and new launcher is available', async () => {
-    const manager = new (createModule().DistributionManager)(undefined as any, { customCodeQlPath: pathToCmd } as any, undefined as any);
+    const manager = new (createModule().DistributionManager)(
+      { customCodeQlPath: pathToCmd } as any,
+      {} as any,
+      undefined as any
+    );
     launcherThatExists = ''; // pretend both launchers exist
 
     const result = await manager.getCodeQlPathWithoutVersionCheck();
@@ -278,7 +286,11 @@ describe('Launcher path', () => {
   });
 
   it('should warn when launcher path is incorrect', async () => {
-    const manager = new (createModule().DistributionManager)(undefined as any, { customCodeQlPath: pathToCmd } as any, undefined as any);
+    const manager = new (createModule().DistributionManager)(
+      { customCodeQlPath: pathToCmd } as any,
+      {} as any,
+      undefined as any
+    );
     launcherThatExists = 'xxx'; // pretend neither launcher exists
 
     const result = await manager.getCodeQlPathWithoutVersionCheck();

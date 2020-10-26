@@ -59,14 +59,6 @@ import { QLTestAdapterFactory } from './test-adapter';
 import { TestUIService } from './test-ui';
 import { CompareInterfaceManager } from './compare/compare-interface';
 import { gatherQlFiles } from './pure/files';
-import { initializeTelemetry } from './telemetry';
-import {
-  commandRunner,
-  commandRunnerWithProgress,
-  ProgressCallback,
-  withProgress,
-  ProgressUpdate
-} from './commandRunner';
 
 /**
  * extension.ts
@@ -95,9 +87,6 @@ const errorStubs: Disposable[] = [];
  */
 let isInstallingOrUpdatingDistribution = false;
 
-const extensionId = 'GitHub.vscode-codeql';
-const extension = extensions.getExtension(extensionId);
-
 /**
  * If the user tries to execute vscode commands after extension activation is failed, give
  * a sensible error message.
@@ -108,6 +97,8 @@ function registerErrorStubs(excludedCommands: string[], stubGenerator: (command:
   // Remove existing stubs
   errorStubs.forEach(stub => stub.dispose());
 
+  const extensionId = 'GitHub.vscode-codeql'; // TODO: Is there a better way of obtaining this?
+  const extension = extensions.getExtension(extensionId);
   if (extension === undefined) {
     throw new Error(`Can't find extension ${extensionId}`);
   }
@@ -117,25 +108,42 @@ function registerErrorStubs(excludedCommands: string[], stubGenerator: (command:
 
   stubbedCommands.forEach(command => {
     if (excludedCommands.indexOf(command) === -1) {
-      errorStubs.push(commandRunner(command, stubGenerator(command)));
+      errorStubs.push(helpers.commandRunner(command, stubGenerator(command)));
     }
   });
 }
 
-export async function activate(ctx: ExtensionContext): Promise<void> {
-  logger.log(`Starting ${extensionId} extension`);
-  if (extension === undefined) {
-    throw new Error(`Can't find extension ${extensionId}`);
-  }
+/**
+ * The publicly available interface for this extension. This is to
+ * be used in our tests.
+ */
+export interface CodeQLExtensionInterface {
+  readonly ctx: ExtensionContext;
+  readonly cliServer: CodeQLCliServer;
+  readonly qs: qsClient.QueryServerClient;
+  readonly distributionManager: DistributionManager;
+}
 
-  initializeLogging(ctx);
-  await initializeTelemetry(extension, ctx);
-  languageSupport.install();
+/**
+ * Returns the CodeQLExtensionInterface, or an empty object if the interface is not
+ * available afer activation is complete. This will happen if there is no cli
+ * installed when the extension starts. Downloading and installing the cli
+ * will happen at a later time.
+ *
+ * @param ctx The extension context
+ *
+ * @returns CodeQLExtensionInterface
+ */
+export async function activate(ctx: ExtensionContext): Promise<CodeQLExtensionInterface | {}> {
+  logger.log('Starting CodeQL extension');
 
   const distributionConfigListener = new DistributionConfigListener();
+  initializeLogging(ctx);
+  languageSupport.install();
+
   ctx.subscriptions.push(distributionConfigListener);
   const codeQlVersionRange = DEFAULT_DISTRIBUTION_VERSION_RANGE;
-  const distributionManager = new DistributionManager(ctx, distributionConfigListener, codeQlVersionRange);
+  const distributionManager = new DistributionManager(distributionConfigListener, codeQlVersionRange, ctx);
 
   const shouldUpdateOnNextActivationKey = 'shouldUpdateOnNextActivation';
 
@@ -183,7 +191,7 @@ export async function activate(ctx: ExtensionContext): Promise<void> {
             location: ProgressLocation.Notification,
           };
 
-          await withProgress(progressOptions, progress =>
+          await helpers.withProgress(progressOptions, progress =>
             distributionManager.installExtensionManagedDistributionRelease(result.updatedRelease, progress));
 
           await ctx.globalState.update(shouldUpdateOnNextActivationKey, false);
@@ -266,14 +274,14 @@ export async function activate(ctx: ExtensionContext): Promise<void> {
     return result;
   }
 
-  async function installOrUpdateThenTryActivate(config: DistributionUpdateConfig): Promise<void> {
+  async function installOrUpdateThenTryActivate(config: DistributionUpdateConfig): Promise<CodeQLExtensionInterface | {}> {
     await installOrUpdateDistribution(config);
 
     // Display the warnings even if the extension has already activated.
     const distributionResult = await getDistributionDisplayingDistributionWarnings();
-
+    let extensionInterface: CodeQLExtensionInterface | {} = {};
     if (!beganMainExtensionActivation && distributionResult.kind !== FindDistributionResultKind.NoDistribution) {
-      await activateWithInstalledDistribution(ctx, distributionManager);
+      extensionInterface = await activateWithInstalledDistribution(ctx, distributionManager);
     } else if (distributionResult.kind === FindDistributionResultKind.NoDistribution) {
       registerErrorStubs([checkForUpdatesCommand], command => async () => {
         const installActionName = 'Install CodeQL CLI';
@@ -281,7 +289,7 @@ export async function activate(ctx: ExtensionContext): Promise<void> {
           items: [installActionName]
         });
         if (chosenAction === installActionName) {
-          installOrUpdateThenTryActivate({
+          await installOrUpdateThenTryActivate({
             isUserInitiated: true,
             shouldDisplayMessageWhenNoUpdates: false,
             allowAutoUpdating: true
@@ -289,6 +297,7 @@ export async function activate(ctx: ExtensionContext): Promise<void> {
         }
       });
     }
+    return extensionInterface;
   }
 
   ctx.subscriptions.push(distributionConfigListener.onDidChangeConfiguration(() => installOrUpdateThenTryActivate({
@@ -296,13 +305,13 @@ export async function activate(ctx: ExtensionContext): Promise<void> {
     shouldDisplayMessageWhenNoUpdates: false,
     allowAutoUpdating: true
   })));
-  ctx.subscriptions.push(commandRunner(checkForUpdatesCommand, () => installOrUpdateThenTryActivate({
+  ctx.subscriptions.push(helpers.commandRunner(checkForUpdatesCommand, () => installOrUpdateThenTryActivate({
     isUserInitiated: true,
     shouldDisplayMessageWhenNoUpdates: true,
     allowAutoUpdating: true
   })));
 
-  await installOrUpdateThenTryActivate({
+  return await installOrUpdateThenTryActivate({
     isUserInitiated: !!ctx.globalState.get(shouldUpdateOnNextActivationKey),
     shouldDisplayMessageWhenNoUpdates: false,
 
@@ -315,7 +324,7 @@ export async function activate(ctx: ExtensionContext): Promise<void> {
 async function activateWithInstalledDistribution(
   ctx: ExtensionContext,
   distributionManager: DistributionManager
-): Promise<void> {
+): Promise<CodeQLExtensionInterface> {
   beganMainExtensionActivation = true;
   // Remove any error stubs command handlers left over from first part
   // of activation.
@@ -367,6 +376,7 @@ async function activateWithInstalledDistribution(
 
   logger.log('Initializing query history manager.');
   const queryHistoryConfigurationListener = new QueryHistoryConfigListener();
+  ctx.subscriptions.push(queryHistoryConfigurationListener);
   const showResults = async (item: CompletedQuery) =>
     showResultsForCompletedQuery(item, WebviewReveal.Forced);
 
@@ -417,7 +427,7 @@ async function activateWithInstalledDistribution(
   async function compileAndRunQuery(
     quickEval: boolean,
     selectedQuery: Uri | undefined,
-    progress: ProgressCallback,
+    progress: helpers.ProgressCallback,
     token: CancellationToken,
   ): Promise<void> {
     if (qs !== undefined) {
@@ -478,10 +488,10 @@ async function activateWithInstalledDistribution(
 
   logger.log('Registering top-level command palette commands.');
   ctx.subscriptions.push(
-    commandRunnerWithProgress(
+    helpers.commandRunnerWithProgress(
       'codeQL.runQuery',
       async (
-        progress: ProgressCallback,
+        progress: helpers.ProgressCallback,
         token: CancellationToken,
         uri: Uri | undefined
       ) => await compileAndRunQuery(false, uri, progress, token),
@@ -492,10 +502,10 @@ async function activateWithInstalledDistribution(
     )
   );
   ctx.subscriptions.push(
-    commandRunnerWithProgress(
+    helpers.commandRunnerWithProgress(
       'codeQL.runQueries',
       async (
-        progress: ProgressCallback,
+        progress: helpers.ProgressCallback,
         token: CancellationToken,
         _: Uri | undefined,
         multi: Uri[]
@@ -520,7 +530,7 @@ async function activateWithInstalledDistribution(
 
         // Use a wrapped progress so that messages appear with the queries remaining in it.
         let queriesRemaining = queryUris.length;
-        function wrappedProgress(update: ProgressUpdate) {
+        function wrappedProgress(update: helpers.ProgressUpdate) {
           const message = queriesRemaining > 1
             ? `${queriesRemaining} remaining. ${update.message}`
             : update.message;
@@ -556,10 +566,10 @@ async function activateWithInstalledDistribution(
       })
   );
   ctx.subscriptions.push(
-    commandRunnerWithProgress(
+    helpers.commandRunnerWithProgress(
       'codeQL.quickEval',
       async (
-        progress: ProgressCallback,
+        progress: helpers.ProgressCallback,
         token: CancellationToken,
         uri: Uri | undefined
       ) => await compileAndRunQuery(true, uri, progress, token),
@@ -569,8 +579,8 @@ async function activateWithInstalledDistribution(
       })
   );
   ctx.subscriptions.push(
-    commandRunnerWithProgress('codeQL.quickQuery', async (
-      progress: ProgressCallback,
+    helpers.commandRunnerWithProgress('codeQL.quickQuery', async (
+      progress: helpers.ProgressCallback,
       token: CancellationToken
     ) =>
       displayQuickQuery(ctx, cliServer, databaseUI, progress, token),
@@ -581,7 +591,7 @@ async function activateWithInstalledDistribution(
   );
 
   ctx.subscriptions.push(
-    commandRunner('codeQL.restartQueryServer', async () => {
+    helpers.commandRunner('codeQL.restartQueryServer', async () => {
       await qs.restartQueryServer();
       helpers.showAndLogInformationMessage('CodeQL Query Server restarted.', {
         outputLogger: queryServerLogger,
@@ -589,24 +599,24 @@ async function activateWithInstalledDistribution(
     })
   );
   ctx.subscriptions.push(
-    commandRunner('codeQL.chooseDatabaseFolder', (
-      progress: ProgressCallback,
+    helpers.commandRunner('codeQL.chooseDatabaseFolder', (
+      progress: helpers.ProgressCallback,
       token: CancellationToken
     ) =>
       databaseUI.handleChooseDatabaseFolder(progress, token)
     )
   );
   ctx.subscriptions.push(
-    commandRunner('codeQL.chooseDatabaseArchive', (
-      progress: ProgressCallback,
+    helpers.commandRunner('codeQL.chooseDatabaseArchive', (
+      progress: helpers.ProgressCallback,
       token: CancellationToken
     ) =>
       databaseUI.handleChooseDatabaseArchive(progress, token)
     )
   );
   ctx.subscriptions.push(
-    commandRunnerWithProgress('codeQL.chooseDatabaseLgtm', (
-      progress: ProgressCallback,
+    helpers.commandRunnerWithProgress('codeQL.chooseDatabaseLgtm', (
+      progress: helpers.ProgressCallback,
       token: CancellationToken
     ) =>
       databaseUI.handleChooseDatabaseLgtm(progress, token),
@@ -615,8 +625,8 @@ async function activateWithInstalledDistribution(
       })
   );
   ctx.subscriptions.push(
-    commandRunnerWithProgress('codeQL.chooseDatabaseInternet', (
-      progress: ProgressCallback,
+    helpers.commandRunnerWithProgress('codeQL.chooseDatabaseInternet', (
+      progress: helpers.ProgressCallback,
       token: CancellationToken
     ) =>
       databaseUI.handleChooseDatabaseInternet(progress, token),
@@ -643,8 +653,8 @@ async function activateWithInstalledDistribution(
 
   const astViewer = new AstViewer();
   ctx.subscriptions.push(astViewer);
-  ctx.subscriptions.push(commandRunnerWithProgress('codeQL.viewAst', async (
-    progress: ProgressCallback,
+  ctx.subscriptions.push(helpers.commandRunnerWithProgress('codeQL.viewAst', async (
+    progress: helpers.ProgressCallback,
     token: CancellationToken
   ) => {
     const ast = await new TemplatePrintAstProvider(cliServer, qs, dbm, progress, token)
@@ -660,6 +670,13 @@ async function activateWithInstalledDistribution(
   commands.executeCommand('codeQLDatabases.removeOrphanedDatabases');
 
   logger.log('Successfully finished extension initialization.');
+
+  return {
+    ctx,
+    cliServer,
+    qs,
+    distributionManager
+  };
 }
 
 function getContextStoragePath(ctx: ExtensionContext) {
