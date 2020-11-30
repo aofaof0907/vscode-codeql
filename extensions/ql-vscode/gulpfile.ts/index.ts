@@ -4,12 +4,7 @@ import { compileTextMateGrammar } from './textmate';
 import { copyTestData } from './tests';
 import { compileView } from './webpack';
 import { packageExtension } from './package';
-import { injectAppInsightsKey } from './appInsights';
 
-export const buildWithoutPackage =
-  gulp.parallel(
-    compileTypeScript, compileTextMateGrammar, compileView, copyTestData, copyViewCss
-  );
-
-export { compileTextMateGrammar, watchTypeScript, compileTypeScript, injectAppInsightsKey };
-exports.default = gulp.series(buildWithoutPackage, injectAppInsightsKey, packageExtension);
+export const buildWithoutPackage = gulp.parallel(compileTypeScript, compileTextMateGrammar, compileView, copyTestData, copyViewCss);
+export { compileTextMateGrammar, watchTypeScript, compileTypeScript, copyTestData };
+exports.default = gulp.series(exports.buildWithoutPackage, packageExtension);
