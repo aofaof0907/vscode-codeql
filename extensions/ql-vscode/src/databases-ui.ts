@@ -18,17 +18,15 @@ import {
   DatabaseItem,
   DatabaseManager,
   getUpgradesDirectories,
-  isLikelyDatabaseRoot,
-  isLikelyDbLanguageFolder,
 } from './databases';
 import {
   commandRunner,
   commandRunnerWithProgress,
-  ProgressCallback,
-} from './commandRunner';
-import {
   getOnDiskWorkspaceFolders,
-  showAndLogErrorMessage
+  ProgressCallback,
+  showAndLogErrorMessage,
+  isLikelyDatabaseRoot,
+  isLikelyDbLanguageFolder
 } from './helpers';
 import { logger } from './logging';
 import { clearCacheInDatabase } from './run-queries';
@@ -145,6 +143,7 @@ class DatabaseTreeDataProvider extends DisposableObject
       );
     }
     item.tooltip = element.databaseUri.fsPath;
+    item.description = element.language;
     return item;
   }
 
