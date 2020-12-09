@@ -173,6 +173,7 @@ class HistoryTreeDataProvider extends DisposableObject implements QueryHistoryDa
  */
 const DOUBLE_CLICK_TIME = 500;
 
+const NO_QUERY_SELECTED = 'No query selected. Select a query history item you have already run and try again.';
 export class QueryHistoryManager extends DisposableObject {
   treeDataProvider: HistoryTreeDataProvider;
   treeView: vscode.TreeView<CompletedQuery>;
@@ -311,6 +312,10 @@ export class QueryHistoryManager extends DisposableObject {
       return;
     }
 
+    if (!finalSingleItem) {
+      throw new Error(NO_QUERY_SELECTED);
+    }
+
     const textDocument = await vscode.workspace.openTextDocument(
       vscode.Uri.file(finalSingleItem.query.program.queryPath)
     );
@@ -399,6 +404,11 @@ export class QueryHistoryManager extends DisposableObject {
     if (!this.assertSingleQuery(finalMultiSelect)) {
       return;
     }
+
+    if (!finalSingleItem) {
+      throw new Error(NO_QUERY_SELECTED);
+    }
+
     this.treeDataProvider.setCurrentItem(finalSingleItem);
 
     const now = new Date();
@@ -439,6 +449,10 @@ export class QueryHistoryManager extends DisposableObject {
   ) {
     if (!this.assertSingleQuery(multiSelect)) {
       return;
+    }
+
+    if (!singleItem) {
+      throw new Error(NO_QUERY_SELECTED);
     }
 
     const queryName = singleItem.queryName.endsWith('.ql')
