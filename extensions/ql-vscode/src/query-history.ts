@@ -53,14 +53,10 @@ const SHOW_QUERY_TEXT_QUICK_EVAL_MSG = `\
  */
 const FAILED_QUERY_HISTORY_ITEM_ICON = 'media/red-x.svg';
 
-interface QueryHistoryDataProvider extends vscode.TreeDataProvider<CompletedQuery> {
-  updateTreeItemContextValue(element: CompletedQuery): Promise<void>;
-}
-
 /**
  * Tree data provider for the query history view.
  */
-class HistoryTreeDataProvider extends DisposableObject implements QueryHistoryDataProvider {
+class HistoryTreeDataProvider extends DisposableObject {
   private _onDidChangeTreeData = super.push(new vscode.EventEmitter<CompletedQuery | undefined>());
 
   readonly onDidChangeTreeData: vscode.Event<CompletedQuery | undefined> = this
@@ -83,37 +79,28 @@ class HistoryTreeDataProvider extends DisposableObject implements QueryHistoryDa
     );
   }
 
-  async updateTreeItemContextValue(element: CompletedQuery): Promise<void> {
-    // Mark this query history item according to whether it has a
-    // SARIF file so that we can make context menu items conditionally
-    // available.
-    const hasResults = await element.query.hasInterpretedResults();
-    element.treeItem!.contextValue = hasResults
-      ? 'interpretedResultsItem'
-      : 'rawResultsItem';
-    this.refresh();
-  }
-
   async getTreeItem(element: CompletedQuery): Promise<vscode.TreeItem> {
-    if (element.treeItem !== undefined)
-      return element.treeItem;
+    const treeItem = new vscode.TreeItem(element.toString());
 
-    const it = new vscode.TreeItem(element.toString());
-
-    it.command = {
+    treeItem.command = {
       title: 'Query History Item',
       command: 'codeQLQueryHistory.itemClicked',
       arguments: [element],
     };
 
-    element.treeItem = it;
-    this.updateTreeItemContextValue(element);
+    // Mark this query history item according to whether it has a
+    // SARIF file so that we can make context menu items conditionally
+    // available.
+    const hasResults = await element.query.hasInterpretedResults();
+    treeItem.contextValue = hasResults
+      ? 'interpretedResultsItem'
+      : 'rawResultsItem';
 
     if (!element.didRunSuccessfully) {
-      it.iconPath = this.failedIconPath;
+      treeItem.iconPath = this.failedIconPath;
     }
 
-    return it;
+    return treeItem;
   }
 
   getChildren(
@@ -158,8 +145,8 @@ class HistoryTreeDataProvider extends DisposableObject implements QueryHistoryDa
     return this.history;
   }
 
-  refresh() {
-    this._onDidChangeTreeData.fire(undefined);
+  refresh(CompletedQuery?: CompletedQuery) {
+    this._onDidChangeTreeData.fire(CompletedQuery);
   }
 
   find(queryId: number): CompletedQuery | undefined {
@@ -368,10 +355,8 @@ export class QueryHistoryManager extends DisposableObject {
     });
     // undefined response means the user cancelled the dialog; don't change anything
     if (response !== undefined) {
-      if (response === '')
-        // Interpret empty string response as 'go back to using default'
-        singleItem.options.label = undefined;
-      else singleItem.options.label = response;
+      // Interpret empty string response as 'go back to using default'
+      singleItem.options.label = response === '' ? undefined : response;
       this.treeDataProvider.refresh();
     }
   }
@@ -696,7 +681,7 @@ the file in the file explorer and dragging it into the workspace.`
     };
   }
 
-  async updateTreeItemContextValue(element: CompletedQuery): Promise<void> {
-    this.treeDataProvider.updateTreeItemContextValue(element);
+  async refreshTreeView(completedQuery: CompletedQuery): Promise<void> {
+    this.treeDataProvider.refresh(completedQuery);
   }
 }
