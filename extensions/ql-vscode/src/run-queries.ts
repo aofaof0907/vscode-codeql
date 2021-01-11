@@ -355,7 +355,7 @@ async function compileNonDestructiveUpgrade(
   if (!matchesTarget) {
     reportNoUpgradePath(query);
   }
-  const result = await compileDatabaseUpgradeSequence(qs, query.dbItem, query.queryDbscheme, scripts, upgradeTemp, progress, token);
+  const result = await compileDatabaseUpgradeSequence(qs, query.dbItem, scripts, upgradeTemp, progress, token);
   if (result.compiledUpgrades === undefined) {
     const error = result.error || '[no error message available]';
     throw new Error(error);
@@ -363,7 +363,7 @@ async function compileNonDestructiveUpgrade(
   // We can upgrade to the actual target
   query.program.dbschemePath = query.queryDbscheme;
   // We are new enough that we will always support single file upgrades.
-  return result.compiledUpgrades.compiledUpgradeFile!;
+  return result.compiledUpgrades;
 
 }
 
