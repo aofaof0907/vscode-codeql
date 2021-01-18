@@ -4,7 +4,15 @@ import { window as Window } from 'vscode';
 import { CompletedQuery } from './query-results';
 import { QueryHistoryConfig } from './config';
 import { QueryWithResults } from './run-queries';
-import * as helpers from './helpers';
+import {
+  showAndLogErrorMessage,
+  showAndLogInformationMessage,
+  showAndLogWarningMessage,
+  showBinaryChoiceDialog
+} from './helpers';
+import {
+  commandRunner
+} from './commandRunner';
 import { logger } from './logging';
 import { URLSearchParams } from 'url';
 import { QueryServerClient } from './queryserver-client';
@@ -377,7 +385,7 @@ export class QueryHistoryManager extends DisposableObject {
         this.doCompareCallback(from, to);
       }
     } catch (e) {
-      helpers.showAndLogErrorMessage(e.message);
+      showAndLogErrorMessage(e.message);
     }
   }
 
@@ -424,7 +432,7 @@ export class QueryHistoryManager extends DisposableObject {
     if (singleItem.logFileLocation) {
       await this.tryOpenExternalFile(singleItem.logFileLocation);
     } else {
-      helpers.showAndLogWarningMessage('No log file available');
+      showAndLogWarningMessage('No log file available');
     }
   }
 
@@ -469,7 +477,7 @@ export class QueryHistoryManager extends DisposableObject {
       );
     } else {
       const label = singleItem.getLabel();
-      helpers.showAndLogInformationMessage(
+      showAndLogInformationMessage(
         `Query ${label} has no interpreted results.`
       );
     }
@@ -548,7 +556,7 @@ export class QueryHistoryManager extends DisposableObject {
         ) ||
         e.message.includes('too large to open')
       ) {
-        const res = await helpers.showBinaryChoiceDialog(
+        const res = await showBinaryChoiceDialog(
           `VS Code does not allow extensions to open files >50MB. This file
 exceeds that limit. Do you want to open it outside of VS Code?
 
@@ -559,11 +567,11 @@ the file in the file explorer and dragging it into the workspace.`
           try {
             await vscode.commands.executeCommand('revealFileInOS', uri);
           } catch (e) {
-            helpers.showAndLogErrorMessage(e.message);
+            showAndLogErrorMessage(e.message);
           }
         }
       } else {
-        helpers.showAndLogErrorMessage(`Could not open file ${fileLocation}`);
+        showAndLogErrorMessage(`Could not open file ${fileLocation}`);
         logger.log(e.message);
         logger.log(e.stack);
       }
@@ -617,7 +625,7 @@ the file in the file explorer and dragging it into the workspace.`
 
   private assertSingleQuery(multiSelect: CompletedQuery[] = [], message = 'Please select a single query.') {
     if (multiSelect.length > 1) {
-      helpers.showAndLogErrorMessage(
+      showAndLogErrorMessage(
         message
       );
       return false;

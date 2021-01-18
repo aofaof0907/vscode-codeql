@@ -8,7 +8,6 @@ import {
 } from 'vscode';
 import { showAndLogErrorMessage, showAndLogWarningMessage } from './helpers';
 import { logger } from './logging';
-import { telemetryListener } from './telemetry';
 
 export class UserCancellationException extends Error {
   /**
@@ -115,26 +114,21 @@ export function commandRunner(
   task: NoProgressTask,
 ): Disposable {
   return commands.registerCommand(commandId, async (...args: any[]) => {
-    const startTIme = Date.now();
-    let error: Error | undefined;
-
     try {
-      await task(...args);
+      return await task(...args);
     } catch (e) {
-      error = e;
+      const errorMessage = `${e.message || e} (${commandId})`;
       if (e instanceof UserCancellationException) {
         // User has cancelled this action manually
         if (e.silent) {
-          logger.log(e.message);
+          logger.log(errorMessage);
         } else {
-          showAndLogWarningMessage(e.message);
+          showAndLogWarningMessage(errorMessage);
         }
       } else {
-        showAndLogErrorMessage(e.message || e);
+        showAndLogErrorMessage(errorMessage);
       }
-    } finally {
-      const executionTime = Date.now() - startTIme;
-      telemetryListener.sendCommandUsage(commandId, executionTime, error);
+      return undefined;
     }
   });
 }
@@ -155,29 +149,67 @@ export function commandRunnerWithProgress<R>(
   progressOptions: Partial<ProgressOptions>
 ): Disposable {
   return commands.registerCommand(commandId, async (...args: any[]) => {
-    const startTIme = Date.now();
-    let error: Error | undefined;
     const progressOptionsWithDefaults = {
       location: ProgressLocation.Notification,
       ...progressOptions
     };
     try {
-      await withProgress(progressOptionsWithDefaults, task, ...args);
+      return await withProgress(progressOptionsWithDefaults, task, ...args);
     } catch (e) {
-      error = e;
+      const errorMessage = `${e.message || e} (${commandId})`;
       if (e instanceof UserCancellationException) {
         // User has cancelled this action manually
         if (e.silent) {
-          logger.log(e.message);
+          logger.log(errorMessage);
         } else {
-          showAndLogWarningMessage(e.message);
+          showAndLogWarningMessage(errorMessage);
         }
       } else {
-        showAndLogErrorMessage(e.message || e);
+        showAndLogErrorMessage(errorMessage);
       }
-    } finally {
-      const executionTime = Date.now() - startTIme;
-      telemetryListener.sendCommandUsage(commandId, executionTime, error);
+      return undefined;
     }
   });
+}
+
+/**
+ * Displays a progress monitor that indicates how much progess has been made
+ * reading from a stream.
+ *
+ * @param readable The stream to read progress from
+ * @param messagePrefix A prefix for displaying the message
+ * @param totalNumBytes Total number of bytes in this stream
+ * @param progress The progress callback used to set messages
+ */
+export function reportStreamProgress(
+  readable: NodeJS.ReadableStream,
+  messagePrefix: string,
+  totalNumBytes?: number,
+  progress?: ProgressCallback
+) {
+  if (progress && totalNumBytes) {
+    let numBytesDownloaded = 0;
+    const bytesToDisplayMB = (numBytes: number): string => `${(numBytes / (1024 * 1024)).toFixed(1)} MB`;
+    const updateProgress = () => {
+      progress({
+        step: numBytesDownloaded,
+        maxStep: totalNumBytes,
+        message: `${messagePrefix} [${bytesToDisplayMB(numBytesDownloaded)} of ${bytesToDisplayMB(totalNumBytes)}]`,
+      });
+    };
+
+    // Display the progress straight away rather than waiting for the first chunk.
+    updateProgress();
+
+    readable.on('data', data => {
+      numBytesDownloaded += data.length;
+      updateProgress();
+    });
+  } else if (progress) {
+    progress({
+      step: 1,
+      maxStep: 2,
+      message: `${messagePrefix} (Size unknown)`,
+    });
+  }
 }
