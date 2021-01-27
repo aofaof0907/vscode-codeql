@@ -18,7 +18,6 @@ import * as config from './config';
 import { DatabaseItem } from './databases';
 import { getOnDiskWorkspaceFolders, showAndLogErrorMessage } from './helpers';
 import { ProgressCallback, UserCancellationException } from './commandRunner';
-import * as helpers from './helpers';
 import { DatabaseInfo, QueryMetadata, ResultsPaths } from './pure/interface-types';
 import { logger } from './logging';
 import * as messages from './pure/messages';
@@ -332,7 +331,7 @@ async function checkDbschemeCompatibility(
 }
 
 function reportNoUpgradePath(query: QueryInfo) {
-  throw new Error(`Query ${query.program.queryPath} expects database scheme ${query.queryDbscheme}, but the current database has a different scheme, and no database upgrades are available. The current database scheme may be newer than the CodeQL query libraries in your workspace. Please try using a newer version of the query libraries.`);
+  throw new Error(`Query ${query.program.queryPath} expects database scheme ${query.queryDbscheme}, but the current database has a different scheme, and no database upgrades are available. The current database scheme may be newer than the CodeQL query libraries in your workspace.\n\nPlease try using a newer version of the query libraries.`);
 }
 
 /**
@@ -345,7 +344,7 @@ async function compileNonDestructiveUpgrade(
   progress: ProgressCallback,
   token: CancellationToken,
 ): Promise<string> {
-  const searchPath = helpers.getOnDiskWorkspaceFolders();
+  const searchPath = getOnDiskWorkspaceFolders();
 
   if (!query.dbItem?.contents?.dbSchemeUri) {
     throw new Error('Database is invalid, and cannot be upgraded.');
@@ -578,7 +577,7 @@ export async function compileAndRunQueryAgainstDatabase(
       if (result.resultType !== messages.QueryResultType.SUCCESS) {
         const message = result.message || 'Failed to run query';
         logger.log(message);
-        helpers.showAndLogErrorMessage(message);
+        showAndLogErrorMessage(message);
       }
       return {
         query,
