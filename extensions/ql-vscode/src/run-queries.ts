@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs-extra';
 import * as path from 'path';
-import * as tmp from 'tmp';
+import * as tmp from 'tmp-promise';
 import {
   CancellationToken,
   ConfigurationTarget,
@@ -339,7 +339,7 @@ function reportNoUpgradePath(query: QueryInfo) {
  */
 async function compileNonDestructiveUpgrade(
   qs: qsClient.QueryServerClient,
-  upgradeTemp: tmp.DirResult,
+  upgradeTemp: tmp.DirectoryResult,
   query: QueryInfo,
   progress: ProgressCallback,
   token: CancellationToken,
@@ -553,7 +553,7 @@ export async function compileAndRunQueryAgainstDatabase(
 
   const query = new QueryInfo(qlProgram, db, packConfig.dbscheme, quickEvalPosition, metadata, templates);
 
-  const upgradeDir = tmp.dirSync({ dir: upgradesTmpDir.name });
+  const upgradeDir = await tmp.dir({ dir: upgradesTmpDir.name });
   try {
     let upgradeQlo;
     if (await hasNondestructiveUpgradeCapabilities(qs)) {
@@ -616,7 +616,7 @@ export async function compileAndRunQueryAgainstDatabase(
       return createSyntheticResult(query, db, historyItemOptions, 'Query had compilation errors', messages.QueryResultType.OTHER_ERROR);
     }
   } finally {
-    upgradeDir.removeCallback();
+    upgradeDir.cleanup();
   }
 }
 
